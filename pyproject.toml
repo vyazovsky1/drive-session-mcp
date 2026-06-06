@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "drive-session-mcp"
+version = "0.1.0"
+description = "Browser-session Google Drive MCP server (no OAuth2; reuses a persisted Playwright profile)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Aleksey Vyazovsky" }]
+dependencies = [
+    "mcp>=1.2",
+    "playwright>=1.49",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+drive-session-mcp = "drive_session_mcp.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/drive_session_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
