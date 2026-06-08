@@ -100,6 +100,23 @@ claude mcp add drive-session -- drive-session-mcp serve
 claude mcp add drive-session -- python -m drive_session_mcp.cli serve
 ```
 
+By default this registers the server at **`local`** scope — available only in the
+current project directory. To make it available in **every** project on your
+machine, add the user scope (`-s user`):
+
+```powershell
+claude mcp add drive-session -s user -- drive-session-mcp serve
+# or:
+claude mcp add drive-session -s user -- python -m drive_session_mcp.cli serve
+```
+
+> Use `python -m drive_session_mcp.cli serve` (or the full path to the console
+> script) for `-s user`, since the command must resolve from any working
+> directory. The package being installed with `pip install -e .` makes the module
+> importable everywhere in that Python environment. Avoid `-s project` here — it
+> writes a committed `.mcp.json`, and this server depends on your local
+> authenticated browser profile.
+
 ## Register with Claude Desktop
 
 Add to `claude_desktop_config.json`:
