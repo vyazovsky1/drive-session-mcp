@@ -194,7 +194,7 @@ def test_load_metadata_missing_or_corrupt(tmp_path):
 
 def test_is_fresh_hit_when_file_present(tmp_path):
     (tmp_path / "Report.pdf").write_text("x", encoding="utf-8")
-    record = {"name": "Report.pdf", "modified": "2026-05-01T00:00:00+00:00"}
+    record = {"file": "Report.pdf", "modified": "2026-05-01T00:00:00+00:00"}
     # No modified supplied -> presence is enough.
     assert drive._is_fresh(record, tmp_path, None) is True
     # Matching modified -> hit.
@@ -203,12 +203,12 @@ def test_is_fresh_hit_when_file_present(tmp_path):
 
 def test_is_fresh_stale_when_modified_differs(tmp_path):
     (tmp_path / "Report.pdf").write_text("x", encoding="utf-8")
-    record = {"name": "Report.pdf", "modified": "2026-05-01T00:00:00+00:00"}
+    record = {"file": "Report.pdf", "modified": "2026-05-01T00:00:00+00:00"}
     assert drive._is_fresh(record, tmp_path, "2026-06-01T00:00:00+00:00") is False
 
 
 def test_is_fresh_miss_when_file_absent(tmp_path):
-    record = {"name": "gone.pdf", "modified": None}
+    record = {"file": "gone.pdf", "modified": None}
     assert drive._is_fresh(record, tmp_path, None) is False
 
 

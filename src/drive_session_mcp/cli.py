@@ -63,6 +63,7 @@ async def _do_fetch(
     fmt: str | None,
     mime: str | None,
     modified: str | None,
+    name: str | None = None,
 ) -> int:
     session = BrowserSession(profile)
     try:
@@ -73,6 +74,7 @@ async def _do_fetch(
             export_format=fmt,
             mime_type=mime,
             modified=modified,
+            name=name,
         )
         ok = Path(info["path"]).exists() and (info["bytes"] or 0) > 0
         origin = "from cache" if info.get("cached") else "downloaded"
@@ -119,6 +121,7 @@ async def _selftest(profile: Path | None, query: str) -> int:
                 t["id"],
                 export_format=t.get("export_format"),
                 mime_type=t["mimeType"],
+                name=t.get("name"),
             )
             on_disk = Path(info["path"]).exists() and info["bytes"] > 0
             print(f"[selftest] {kind}: {t['name']} -> {info}")
@@ -156,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--mime", help="file mime type (lets fetch pick the export endpoint)")
     fc.add_argument("--modified", help="file's modified date from search; reuses a cached "
                     "copy only when it matches (re-fetches updated docs)")
+    fc.add_argument("--name", help="original Drive document name (recorded in the manifest)")
 
     st = sub.add_parser("selftest", help="headless search+fetch smoke test")
     st.add_argument("--query", default="report", help="search query for the smoke test")
@@ -176,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_do_search(eff, args.query, args.ftype, args.limit))
         if cmd == "fetch":
             return asyncio.run(
-                _do_fetch(eff, args.id, args.dest, args.fmt, args.mime, args.modified)
+                _do_fetch(eff, args.id, args.dest, args.fmt, args.mime, args.modified, args.name)
             )
         if cmd == "selftest":
             return asyncio.run(_selftest(eff, args.query))

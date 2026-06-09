@@ -246,8 +246,9 @@ async def search(
 # --------------------------------------------------------------------------- #
 # A single manifest per download dir, keyed by "<file_id>:<fmt>", records what
 # was fetched so a repeat fetch of an unchanged file returns the local copy
-# instead of re-downloading. Only the filename is stored (not an absolute path):
-# the manifest lives in the download dir, so the file resolves as dest / name.
+# instead of re-downloading. Each record stores `name` (the original Drive
+# document name) and `file` (the cached filename on disk, not an absolute path):
+# the manifest lives in the download dir, so the file resolves as dest / file.
 METADATA_FILENAME = ".drive_metadata.json"
 
 
@@ -281,8 +282,8 @@ def _is_fresh(record: Any, dest: Path, modified: str | None) -> bool:
     """
     if not isinstance(record, dict):
         return False
-    name = record.get("name")
-    if not name or not (dest / name).exists():
+    file = record.get("file")
+    if not file or not (dest / file).exists():
         return False
     if modified is not None and record.get("modified") != modified:
         return False
@@ -332,6 +333,7 @@ async def fetch(
     export_format: str | None = None,
     mime_type: str | None = None,
     modified: str | None = None,
+    name: str | None = None,
     *,
     timeout_ms: int = FETCH_TIMEOUT_MS,
 ) -> dict[str, Any]:
@@ -340,7 +342,9 @@ async def fetch(
     Caches each fetch in a ``.drive_metadata.json`` manifest in the destination
     dir. A repeat fetch of the same file returns the existing local copy without
     re-downloading, as long as the file is still on disk and -- when `modified`
-    ("date updated") is supplied -- it matches the recorded value.
+    ("date updated") is supplied -- it matches the recorded value. `name` is the
+    original Drive document name, recorded in the manifest alongside the cached
+    filename on disk.
 
     Returns ``{path, bytes, format, exported, id, url, modified, fetched_at,
     cached}``. Raises SessionExpiredError if the server hands back a login page
@@ -365,7 +369,7 @@ async def fetch(
     record = manifest.get(key)
     if _is_fresh(record, dest, modified):
         return {
-            "path": str(dest / record["name"]),
+            "path": str(dest / record["file"]),
             "bytes": record.get("bytes"),
             "format": record.get("format"),
             "exported": fmt is not None,
@@ -401,8 +405,8 @@ async def fetch(
             f"Fetch failed for '{file_id}': HTTP {resp.status}, {len(body)} bytes."
         )
 
-    name = _filename_from_headers(headers, fallback_name)
-    out = dest / name
+    cached_file = _filename_from_headers(headers, fallback_name)
+    out = dest / cached_file
     out.write_bytes(body)
 
     fetched_at = _now_iso()
@@ -412,6 +416,7 @@ async def fetch(
         "modified": modified,
         "fetched_at": fetched_at,
         "name": name,
+        "file": cached_file,
         "bytes": len(body),
         "format": fmt,
     }

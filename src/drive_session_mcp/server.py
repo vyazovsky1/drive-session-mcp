@@ -64,6 +64,7 @@ async def drive_fetch(
     export_format: str | None = None,
     mime_type: str | None = None,
     modified: str | None = None,
+    name: str | None = None,
 ) -> dict[str, Any]:
     """Download a Drive file locally, auto-exporting Google-native docs.
 
@@ -82,6 +83,8 @@ async def drive_fetch(
         modified: The file's ``modified`` ("date updated") value from search.
             When provided, a cached copy is reused only if its recorded value
             matches, so an updated document is re-downloaded.
+        name: The original Drive document name (from ``drive_search``). Recorded
+            in the manifest alongside the cached filename on disk.
 
     Returns ``{path, bytes, format, exported, id, url, modified, fetched_at,
     cached}`` (``cached`` is True when served from the local manifest).
@@ -93,6 +96,7 @@ async def drive_fetch(
         export_format=export_format,
         mime_type=mime_type,
         modified=modified,
+        name=name,
     )
 
 
