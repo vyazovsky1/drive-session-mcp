@@ -15,7 +15,7 @@ ever appears.
 | Tool | What it does |
 |------|--------------|
 | `drive_search(query, filters?, limit?)` | Search Drive (default 20 results, `limit` to change); returns `id`, `name`, `mimeType`, `owner`, `folder`, `modified`, and an `export_format` hint for Google-native docs. |
-| `drive_fetch(file_id, dest_dir?, export_format?, mime_type?)` | Downloads a file locally, auto-exporting Google-native docs (Doc→pdf/docx, Sheet→xlsx, Slides→pdf). |
+| `drive_fetch(file_id, dest_dir?, export_format?, mime_type?, modified?)` | Downloads a file locally, auto-exporting Google-native docs (Doc→pdf/docx, Sheet→xlsx, Slides→pdf). Caches each fetch in a `.drive_metadata.json` manifest in the destination dir; a repeat fetch returns the existing local copy (`cached: true`) instead of re-downloading, re-fetching only when the file is gone or the passed `modified` date no longer matches. |
 
 ## Setup (one time)
 

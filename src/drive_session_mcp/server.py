@@ -63,8 +63,14 @@ async def drive_fetch(
     dest_dir: str | None = None,
     export_format: str | None = None,
     mime_type: str | None = None,
+    modified: str | None = None,
 ) -> dict[str, Any]:
     """Download a Drive file locally, auto-exporting Google-native docs.
+
+    Fetches are cached in a ``.drive_metadata.json`` manifest in the destination
+    dir. Re-fetching the same file returns the existing local copy without
+    downloading again, as long as it is still on disk and -- when ``modified`` is
+    passed -- matches the recorded value.
 
     Args:
         file_id: The Drive file id (from ``drive_search``).
@@ -73,8 +79,12 @@ async def drive_fetch(
             ``docx``, ``xlsx``). Use the ``export_format`` hint from search.
         mime_type: The file's mime type (from search); lets fetch pick the right
             export endpoint. Omit for binary files.
+        modified: The file's ``modified`` ("date updated") value from search.
+            When provided, a cached copy is reused only if its recorded value
+            matches, so an updated document is re-downloaded.
 
-    Returns ``{path, bytes, format, exported}``.
+    Returns ``{path, bytes, format, exported, id, url, modified, fetched_at,
+    cached}`` (``cached`` is True when served from the local manifest).
     """
     return await drive.fetch(
         _session(ctx),
@@ -82,6 +92,7 @@ async def drive_fetch(
         dest_dir=dest_dir,
         export_format=export_format,
         mime_type=mime_type,
+        modified=modified,
     )
 
 

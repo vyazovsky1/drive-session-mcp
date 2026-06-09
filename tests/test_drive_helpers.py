@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from drive_session_mcp import config, drive, errors
@@ -166,6 +168,52 @@ def test_filename_from_content_disposition():
 
 def test_filename_fallback_when_absent():
     assert drive._filename_from_headers({}, "abc.pdf") == "abc.pdf"
+
+
+# --------------------------------------------------------------------------- #
+# fetch metadata cache
+# --------------------------------------------------------------------------- #
+def test_cache_key_includes_format():
+    assert drive._cache_key("ABC", "pdf") == "ABC:pdf"
+    assert drive._cache_key("ABC", None) == "ABC:raw"
+
+
+def test_metadata_roundtrip(tmp_path):
+    path = drive._metadata_path(tmp_path)
+    data = {"ABC:pdf": {"id": "ABC", "name": "Report.pdf"}}
+    drive._save_metadata(path, data)
+    assert drive._load_metadata(path) == data
+
+
+def test_load_metadata_missing_or_corrupt(tmp_path):
+    assert drive._load_metadata(tmp_path / "nope.json") == {}
+    bad = tmp_path / "bad.json"
+    bad.write_text("not json", encoding="utf-8")
+    assert drive._load_metadata(bad) == {}
+
+
+def test_is_fresh_hit_when_file_present(tmp_path):
+    (tmp_path / "Report.pdf").write_text("x", encoding="utf-8")
+    record = {"name": "Report.pdf", "modified": "2026-05-01T00:00:00+00:00"}
+    # No modified supplied -> presence is enough.
+    assert drive._is_fresh(record, tmp_path, None) is True
+    # Matching modified -> hit.
+    assert drive._is_fresh(record, tmp_path, "2026-05-01T00:00:00+00:00") is True
+
+
+def test_is_fresh_stale_when_modified_differs(tmp_path):
+    (tmp_path / "Report.pdf").write_text("x", encoding="utf-8")
+    record = {"name": "Report.pdf", "modified": "2026-05-01T00:00:00+00:00"}
+    assert drive._is_fresh(record, tmp_path, "2026-06-01T00:00:00+00:00") is False
+
+
+def test_is_fresh_miss_when_file_absent(tmp_path):
+    record = {"name": "gone.pdf", "modified": None}
+    assert drive._is_fresh(record, tmp_path, None) is False
+
+
+def test_is_fresh_miss_for_non_record():
+    assert drive._is_fresh(None, Path("."), None) is False
 
 
 # --------------------------------------------------------------------------- #

@@ -62,14 +62,21 @@ async def _do_fetch(
     dest: str | None,
     fmt: str | None,
     mime: str | None,
+    modified: str | None,
 ) -> int:
     session = BrowserSession(profile)
     try:
         info = await drive.fetch(
-            session, file_id, dest_dir=dest, export_format=fmt, mime_type=mime
+            session,
+            file_id,
+            dest_dir=dest,
+            export_format=fmt,
+            mime_type=mime,
+            modified=modified,
         )
-        ok = Path(info["path"]).exists() and info["bytes"] > 0
-        print(f"fetched -> {info}")
+        ok = Path(info["path"]).exists() and (info["bytes"] or 0) > 0
+        origin = "from cache" if info.get("cached") else "downloaded"
+        print(f"fetched ({origin}) -> {info}")
         print("VERIFIED: file exists on disk" if ok else "WARNING: file missing/empty")
         return 0 if ok else 1
     finally:
@@ -147,6 +154,8 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--dest", help="destination dir (defaults to configured download dir)")
     fc.add_argument("--format", dest="fmt", help="export format for native docs (pdf/docx/xlsx/txt)")
     fc.add_argument("--mime", help="file mime type (lets fetch pick the export endpoint)")
+    fc.add_argument("--modified", help="file's modified date from search; reuses a cached "
+                    "copy only when it matches (re-fetches updated docs)")
 
     st = sub.add_parser("selftest", help="headless search+fetch smoke test")
     st.add_argument("--query", default="report", help="search query for the smoke test")
@@ -166,7 +175,9 @@ def main(argv: list[str] | None = None) -> int:
         if cmd == "search":
             return asyncio.run(_do_search(eff, args.query, args.ftype, args.limit))
         if cmd == "fetch":
-            return asyncio.run(_do_fetch(eff, args.id, args.dest, args.fmt, args.mime))
+            return asyncio.run(
+                _do_fetch(eff, args.id, args.dest, args.fmt, args.mime, args.modified)
+            )
         if cmd == "selftest":
             return asyncio.run(_selftest(eff, args.query))
     except (NotLoggedInError, SessionExpiredError, DriveError) as exc:

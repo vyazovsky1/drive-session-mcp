@@ -242,6 +242,60 @@ async def search(
 
 
 # --------------------------------------------------------------------------- #
+# fetch metadata cache
+# --------------------------------------------------------------------------- #
+# A single manifest per download dir, keyed by "<file_id>:<fmt>", records what
+# was fetched so a repeat fetch of an unchanged file returns the local copy
+# instead of re-downloading. Only the filename is stored (not an absolute path):
+# the manifest lives in the download dir, so the file resolves as dest / name.
+METADATA_FILENAME = ".drive_metadata.json"
+
+
+def _metadata_path(dest: Path) -> Path:
+    return dest / METADATA_FILENAME
+
+
+def _load_metadata(path: Path) -> dict[str, Any]:
+    """Load the manifest, tolerating a missing or corrupt file (-> {})."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_metadata(path: Path, data: dict[str, Any]) -> None:
+    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _cache_key(file_id: str, fmt: str | None) -> str:
+    return f"{file_id}:{fmt or 'raw'}"
+
+
+def _is_fresh(record: Any, dest: Path, modified: str | None) -> bool:
+    """True if `record` can satisfy a fetch without re-downloading.
+
+    Requires the record to exist and its file to still be on disk under `dest`.
+    When a `modified` ("date updated") value is supplied it must match the stored
+    one; when omitted, presence + file-on-disk is treated as a hit.
+    """
+    if not isinstance(record, dict):
+        return False
+    name = record.get("name")
+    if not name or not (dest / name).exists():
+        return False
+    if modified is not None and record.get("modified") != modified:
+        return False
+    return True
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(tz=timezone.utc).isoformat()
+
+
+# --------------------------------------------------------------------------- #
 # fetch
 # --------------------------------------------------------------------------- #
 _CD_FILENAME = re.compile(r"filename\*?=(?:UTF-8'')?\"?([^\";]+)\"?", re.IGNORECASE)
@@ -277,18 +331,24 @@ async def fetch(
     dest_dir: str | None = None,
     export_format: str | None = None,
     mime_type: str | None = None,
+    modified: str | None = None,
     *,
     timeout_ms: int = FETCH_TIMEOUT_MS,
 ) -> dict[str, Any]:
     """Download one file to disk, auto-exporting Google-native docs.
 
-    Returns {path, bytes, format, exported}. Raises SessionExpiredError if the
-    server hands back a login page instead of file content.
+    Caches each fetch in a ``.drive_metadata.json`` manifest in the destination
+    dir. A repeat fetch of the same file returns the existing local copy without
+    re-downloading, as long as the file is still on disk and -- when `modified`
+    ("date updated") is supplied -- it matches the recorded value.
+
+    Returns ``{path, bytes, format, exported, id, url, modified, fetched_at,
+    cached}``. Raises SessionExpiredError if the server hands back a login page
+    instead of file content.
     """
     dest = Path(dest_dir).expanduser() if dest_dir else config.download_dir()
     dest.mkdir(parents=True, exist_ok=True)
 
-    ctx = await session.context()
     is_export, fmt, tmpl = _resolve_export(mime_type, export_format)
 
     if is_export:
@@ -298,6 +358,25 @@ async def fetch(
         url = f"https://drive.google.com/uc?id={file_id}&export=download"
         fallback_name = file_id
 
+    # Cache check: if a matching, still-present copy is on record, return it.
+    meta_path = _metadata_path(dest)
+    manifest = _load_metadata(meta_path)
+    key = _cache_key(file_id, fmt)
+    record = manifest.get(key)
+    if _is_fresh(record, dest, modified):
+        return {
+            "path": str(dest / record["name"]),
+            "bytes": record.get("bytes"),
+            "format": record.get("format"),
+            "exported": fmt is not None,
+            "id": record.get("id", file_id),
+            "url": record.get("url", url),
+            "modified": record.get("modified"),
+            "fetched_at": record.get("fetched_at"),
+            "cached": True,
+        }
+
+    ctx = await session.context()
     resp = await ctx.request.get(url, timeout=timeout_ms)
     body = await resp.body()
     headers = dict(resp.headers)
@@ -325,9 +404,27 @@ async def fetch(
     name = _filename_from_headers(headers, fallback_name)
     out = dest / name
     out.write_bytes(body)
+
+    fetched_at = _now_iso()
+    manifest[key] = {
+        "id": file_id,
+        "url": url,
+        "modified": modified,
+        "fetched_at": fetched_at,
+        "name": name,
+        "bytes": len(body),
+        "format": fmt,
+    }
+    _save_metadata(meta_path, manifest)
+
     return {
         "path": str(out),
         "bytes": len(body),
         "format": fmt,
         "exported": is_export,
+        "id": file_id,
+        "url": url,
+        "modified": modified,
+        "fetched_at": fetched_at,
+        "cached": False,
     }
