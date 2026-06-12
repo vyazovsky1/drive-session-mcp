@@ -38,24 +38,19 @@ THREAD_SETTLE  = 5000
 _EXTRACT_THREADS_JS = r"""() => {
     const threads = [];
     document.querySelectorAll('tr.zA').forEach(row => {
-        // Subject: unread rows use .bog, read rows use .bqe or similar
-        const subjectEl = row.querySelector('.bog') || row.querySelector('.bqe');
-        // Sender: .yW is the sender cell; .zF is the display name span inside it
+        // Thread ID: new Gmail UI stores it on a child span, not the tr itself
+        const threadSpan = row.querySelector('[data-legacy-thread-id]');
+        const thread_id  = threadSpan ? threadSpan.getAttribute('data-legacy-thread-id') : '';
+
+        // Subject text is the content of .bqe (read) or .bog (unread) span
+        const subjectEl = row.querySelector('.bqe') || row.querySelector('.bog');
+        // Sender: .yW is the sender cell; .zF is the display name inside
         const senderEl  = row.querySelector('.yW .zF') || row.querySelector('.yW');
         // Snippet: .y2 holds the preview text
         const snippetEl = row.querySelector('.y2');
         // Date: .xW holds the formatted date/time
         const dateEl    = row.querySelector('.xW span[title]') || row.querySelector('.xW');
-        // Thread ID from legacy data attribute (most reliable)
-        let thread_id   = row.getAttribute('data-legacy-thread-id') || '';
-        if (!thread_id) {
-            // Fallback: extract from any link href in the row  (#inbox/hex or #all/hex)
-            const link = row.querySelector('a[href]');
-            if (link) {
-                const m = link.getAttribute('href').match(/#[^/]+\/([a-f0-9]{16,})/);
-                if (m) thread_id = m[1];
-            }
-        }
+
         threads.push({
             id:      thread_id,
             subject: subjectEl ? subjectEl.textContent.trim() : '',
@@ -118,7 +113,9 @@ async def search(
     rendered DOM. Returns a list of dicts with ``id``, ``subject``, ``sender``,
     ``snippet``, ``date``, and ``unread``.
     """
-    url = GMAIL_SEARCH.format(q=quote(query))
+    # Do NOT percent-encode the query — Gmail's hash-fragment router treats
+    # %3A differently from :, breaking operators like "in:inbox".
+    url = f"{GMAIL_BASE}/#search/{query}"
 
     async with session.lock:
         ctx  = await session.context()
@@ -129,7 +126,12 @@ async def search(
             raise SessionExpiredError(
                 "Gmail redirected to login. Run `google-browser-mcp login`."
             )
-        await page.wait_for_timeout(settle_ms)
+
+        # Wait for the thread-list rows to render before extracting.
+        try:
+            await page.wait_for_selector("tr.zA", timeout=10_000)
+        except Exception:
+            pass  # empty inbox or slow load — try extracting anyway
 
         threads: list[dict] = await page.evaluate(_EXTRACT_THREADS_JS)
 

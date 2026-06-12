@@ -118,8 +118,8 @@ def _extract_events(data: Any) -> list[dict[str, Any]]:
 # URL helpers
 # ---------------------------------------------------------------------------
 
-def _date_to_cal_url(year: int, month: int) -> str:
-    return f"{CALENDAR_BASE}/month/{year}/{month}"
+def _date_to_week_url(dt: datetime) -> str:
+    return f"{CALENDAR_BASE}/week/{dt.year}/{dt.month}/{dt.day}"
 
 
 def _parse_date(value: str) -> datetime:
@@ -182,15 +182,15 @@ async def list_events(
     except ValueError as exc:
         raise CalendarError(str(exc)) from exc
 
-    # Determine which months to visit
-    months: list[tuple[int, int]] = []
-    cur = start_dt.replace(day=1)
-    while (cur.year, cur.month) <= (end_dt.year, end_dt.month):
-        months.append((cur.year, cur.month))
-        if cur.month == 12:
-            cur = cur.replace(year=cur.year + 1, month=1)
-        else:
-            cur = cur.replace(month=cur.month + 1)
+    from datetime import timedelta
+
+    # Navigate week-by-week: the week view is what triggers `minievents`.
+    # Build a list of Monday-anchored week starts covering [start_dt, end_dt].
+    week_starts: list[datetime] = []
+    cur = start_dt - timedelta(days=start_dt.weekday())  # Monday of start week
+    while cur <= end_dt:
+        week_starts.append(cur)
+        cur += timedelta(weeks=1)
 
     start_ms = start_dt.timestamp() * 1000
     end_ms   = end_dt.timestamp() * 1000
@@ -214,8 +214,8 @@ async def list_events(
 
         ctx.on("response", on_resp)
         try:
-            for year, month in months:
-                url = _date_to_cal_url(year, month)
+            for week_start in week_starts:
+                url = _date_to_week_url(week_start)
                 await page.goto(url, wait_until="domcontentloaded")
                 if any(m in page.url for m in LOGIN_HOST_MARKERS):
                     raise SessionExpiredError(
